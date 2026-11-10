@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d3b2a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Tractor CO₂</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#f3f4ef; --card:#fff; --ink:#15201a; --muted:#5d6a62; --line:#dfe3da;
+    --green:#1f7a45; --green-d:#1d3b2a; --amber:#c77700; --red:#b42318; --grey:#7a837d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+  header{background:var(--green-d);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
+    display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:1000}
+  header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px}
+  .gps{font-size:13px;display:flex;align-items:center;gap:6px;opacity:.95}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--grey)}
+  .dot.ok{background:#3ddc84}.dot.weak{background:#ffb020}.dot.bad{background:#ff5b4f}
+  main{padding:12px 12px calc(env(safe-area-inset-bottom) + 24px);max-width:720px;margin:0 auto}
+  #mapWrap{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#e6e9e2}
+  #map{height:42vh;min-height:260px}
+  #mapNote{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;
+    padding:20px;color:var(--muted);font-size:14px}
+  .mapBtn{position:absolute;right:10px;bottom:10px;z-index:500;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;font-weight:600;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+  .legend{position:absolute;left:10px;bottom:10px;z-index:500;background:rgba(255,255,255,.92);border-radius:8px;
+    padding:6px 9px;font-size:12px;display:flex;gap:10px}
+  .legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 10px;font-weight:700}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:12px;color:var(--muted)}
+  .big{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .big .stat{background:#eef6f0;border-radius:10px;padding:10px}
+  .big .stat .v{font-size:24px;color:var(--green-d)}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  button{font:inherit;cursor:pointer;border:0;border-radius:12px}
+  .btn{padding:16px 10px;font-size:18px;font-weight:700;color:#fff;background:var(--green);min-height:58px}
+  .btn.amber{background:var(--amber)}.btn.red{background:var(--red)}.btn.grey{background:#4b5650}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn:disabled{opacity:.4}
+  .full{grid-column:1/-1}
+  #implBtn{display:flex;align-items:center;justify-content:center;gap:10px}
+  #implBtn.down{background:var(--green)} #implBtn.up{background:#6b7570}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+  input,select{width:100%;font:inherit;font-size:18px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{flex:1;padding:11px 6px;background:#fff;color:var(--ink);border-radius:0;font-size:15px;font-weight:600}
+  .seg button.on{background:var(--green-d);color:#fff}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .warn{background:#fff6e5;border:1px solid #f3d39b;color:#6b4300;border-radius:10px;padding:10px;font-size:13px;margin-top:10px}
+  .hist{list-style:none;margin:0;padding:0}
+  .hist li{border-top:1px solid var(--line);padding:10px 0;display:flex;justify-content:space-between;gap:10px;align-items:center}
+  .hist li:first-child{border-top:0}
+  .hist .m{font-size:13px;color:var(--muted)}
+  .hist button{background:none;color:var(--green);font-weight:600;padding:6px}
+  .small{font-size:14px;padding:10px 12px;min-height:auto}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:2000}
+  .modal .sheet{background:#fff;width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 18px)}
+  .modal h3{margin:0 0 8px}
+  .modal .controls{margin-top:16px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tractor CO₂</h1>
+  <div class="gps"><span class="dot" id="gpsDot"></span><span id="gpsTxt">GPS off</span></div>
+</header>
+
+<main>
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div id="mapNote">Map could not load (no connection). Tracking and calculations still work.</div>
+    <div class="legend"><span><i style="background:#1f7a45"></i>Working</span><span><i style="background:#8a948e"></i>Transport</span></div>
+    <button class="mapBtn" id="centerBtn">Follow</button>
+  </div>
+
+  <div class="card">
+    <h2 id="statusTitle">Ready</h2>
+    <div class="grid">
+      <div class="stat"><div class="v" id="sTime">0:00:00</div><div class="l">Recording time</div></div>
+      <div class="stat"><div class="v" id="sDist">0.00</div><div class="l">Distance, km</div></div>
+      <div class="stat"><div class="v" id="sArea">0.00</div><div class="l">Worked area, ha</div></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn full" id="startBtn">Start recording</button>
+    <button class="btn amber" id="pauseBtn" style="display:none">Pause</button>
+    <button class="btn red" id="stopBtn" style="display:none">Stop</button>
+    <button class="btn full down" id="implBtn" style="display:none">Implement DOWN · working</button>
+  </div>
+
+  <div class="card">
+    <h2>Implement &amp; fuel</h2>
+    <label for="width">Implement working width (m)</label>
+    <input id="width" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 6">
+
+    <label>How do you give fuel consumption?</label>
+    <div class="seg" id="fuelModeSeg">
+      <button data-m="total">Total litres used</button>
+      <button data-m="rate">Litres per hour</button>
+    </div>
+    <div id="fuelTotalBox">
+      <label for="fuelTotal">Diesel used during this recording (L)</label>
+      <input id="fuelTotal" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. from refill or tractor display">
+    </div>
+    <div id="fuelRateBox" style="display:none">
+      <label for="fuelRate">Average consumption (L/h)</label>
+      <input id="fuelRate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 18">
+      <div class="hint">Litres = L/h × recording time (pauses excluded).</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>CO₂ result</h2>
+    <div class="big">
+      <div class="stat"><div class="v" id="rTotal">–</div><div class="l">kg CO₂ total</div></div>
+      <div class="stat"><div class="v" id="rKm">–</div><div class="l">kg CO₂ / km</div></div>
+      <div class="stat"><div class="v" id="rHa">–</div><div class="l">kg CO₂ / ha</div></div>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="stat"><div class="v" id="rLitres" style="font-size:18px">–</div><div class="l">Diesel, L</div></div>
+      <div class="stat"><div class="v" id="rLkm" style="font-size:18px">–</div><div class="l">L / km</div></div>
+      <div class="stat"><div class="v" id="rLha" style="font-size:18px">–</div><div class="l">L / ha</div></div>
+    </div>
+    <div class="hint" id="calcHint"></div>
+  </div>
+
+  <div class="card">
+    <h2>Settings</h2>
+    <label for="factor">CO₂ factor (kg CO₂ per litre diesel)</label>
+    <input id="factor" type="number" inputmode="decimal" min="0" step="0.01">
+    <div class="hint">Default 2.68 = direct combustion of fossil diesel. Change it if your company uses a different factor (e.g. for renewable blend or well-to-wheel).</div>
+    <div class="controls">
+      <button class="btn ghost small" id="demoBtn">Run demo (simulated field)</button>
+      <button class="btn ghost small" id="csvBtn">Export history CSV</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>History</h2>
+    <ul class="hist" id="hist"></ul>
+  </div>
+
+  <div class="warn" id="envWarn" style="display:none"></div>
+</main>
+
+<div class="modal" id="stopModal">
+  <div class="sheet">
+    <h3>Recording stopped</h3>
+    <div id="stopSummary" class="hint" style="font-size:15px"></div>
+    <div class="hint">Enter fuel used above if you haven't yet — results update immediately.</div>
+    <div class="controls">
+      <button class="btn" id="saveBtn">Save to history</button>
+      <button class="btn ghost" id="discardBtn">Discard</button>
+      <button class="btn ghost full" id="closeModal">Keep editing</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- constants ----------
+  const MAX_ACC = 30;      // ignore fixes worse than this (m)
+  const MIN_STEP = 3;      // ignore movement smaller than this (m) – reduces GPS jitter when standing
+  const MAX_SPEED = 20;    // m/s (72 km/h) – reject GPS jumps faster than this
+  const KEY = 'tco2_current', HKEY = 'tco2_history', SKEY = 'tco2_settings';
+
+  const $ = s => document.querySelector(s);
+  const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+  const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : NaN; };
+
+  const settings = Object.assign({ width: '', fuelMode: 'total', factor: 2.68 }, load(SKEY, {}));
+  const newSession = () => ({ status: 'idle', segs: [], distM: 0, workM: 0, elapsed: 0, resumedAt: null,
+    startedAt: null, endedAt: null, work: true, last: null, lastT: null, fuelTotal: '', fuelRate: '', demo: false });
+  let S = load(KEY, null) || newSession();
+  let history = load(HKEY, []);
+
+  // ---------- geometry ----------
+  const R = 6371008.8, rad = d => d * Math.PI / 180;
+  function hav(a, b) {
+    const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1]);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  // ---------- map ----------
+  let map = null, segLines = [], posMarker = null, accCircle = null, follow = true, viewLayer = null;
+  function initMap() {
+    if (typeof L === 'undefined') { $('#mapNote').style.display = 'flex'; return; }
+    map = L.map('map', { zoomControl: true, attributionControl: true }).setView([61.5, 23.8], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap'
+    }).addTo(map);
+    map.on('dragstart', () => setFollow(false));
+    redrawTrack(true);
+  }
+  function lineStyle(w) { return { color: w ? '#1f7a45' : '#8a948e', weight: w ? 5 : 4, opacity: .9, dashArray: w ? null : '6 6' }; }
+  function redrawTrack(fit) {
+    if (!map) return;
+    segLines.forEach(l => map.removeLayer(l)); segLines = [];
+    S.segs.forEach(s => segLines.push(L.polyline(s.pts, lineStyle(s.w)).addTo(map)));
+    if (fit) {
+      const all = S.segs.flatMap(s => s.pts);
+      if (all.length > 1) map.fitBounds(L.latLngBounds(all), { padding: [30, 30] });
+      else if (all.length === 1) map.setView(all[0], 17);
+    }
+  }
+  function addPointToMap(pt) {
+    if (!map) return;
+    const l = segLines[segLines.length - 1];
+    if (l) l.addLatLng(pt);
+  }
+  function showPos(lat, lng, acc) {
+    if (!map) return;
+    const p = [lat, lng];
+    if (!posMarker) {
+      posMarker = L.circleMarker(p, { radius: 8, color: '#fff', weight: 3, fillColor: '#1565c0', fillOpacity: 1 }).addTo(map);
+      accCircle = L.circle(p, { radius: acc, color: '#1565c0', weight: 1, fillOpacity: .08 }).addTo(map);
+      map.setView(p, 17);
+    } else { posMarker.setLatLng(p); accCircle.setLatLng(p).setRadius(acc); }
+    if (follow) map.panTo(p, { animate: true });
+  }
+  function setFollow(v) { follow = v; $('#centerBtn').textContent = v ? 'Following' : 'Follow'; if (v && posMarker) map.panTo(posMarker.getLatLng()); }
+  $('#centerBtn').onclick = () => { clearView(); setFollow(true); };
+
+  // ---------- GPS ----------
+  let watchId = null, demoTimer = null, wakeLock = null;
+  function gpsStatus(cls, txt) { $('#gpsDot').className = 'dot ' + cls; $('#gpsTxt').textContent = txt; }
+  function startGPS() {
+    if (S.demo) return startDemo();
+    if (!('geolocation' in navigator)) { gpsStatus('bad', 'No GPS'); return; }
+    if (watchId !== null) return;
+    gpsStatus('weak', 'Searching…');
+    watchId = navigator.geolocation.watchPosition(onPos, err => {
+      gpsStatus('bad', err.code === 1 ? 'Permission denied' : 'GPS error');
+      if (err.code === 1) showWarn('Location permission was denied. Allow location for this site in your browser settings, then reload.');
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  }
+  function stopGPS() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+    gpsStatus('', 'GPS off');
+  }
+  async function lockScreen() {
+    try { if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); } } catch (e) {}
+  }
+  function unlockScreen() { try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && (S.status === 'rec' || S.status === 'paused')) lockScreen();
+  });
+
+  let saveTick = 0;
+  function onPos(p) {
+    const { latitude: lat, longitude: lng, accuracy: acc } = p.coords;
+    const t = p.timestamp || Date.now();
+    gpsStatus(acc <= 10 ? 'ok' : acc <= MAX_ACC ? 'weak' : 'bad', '±' + Math.round(acc) + ' m');
+    showPos(lat, lng, acc);
+    if (S.status !== 'rec' || acc > MAX_ACC) return;
+    const pt = [+lat.toFixed(7), +lng.toFixed(7)];
+    if (!S.last) { S.last = pt; S.lastT = t; startSeg(pt); persist(); return; }
+    const d = hav(S.last, pt);
+    if (d < Math.max(MIN_STEP, acc * 0.3)) return;
+    const dt = Math.max(0.5, (t - S.lastT) / 1000);
+    if (d / dt > MAX_SPEED) return; // jump
+    S.distM += d; if (S.work) S.workM += d;
+    S.segs[S.segs.length - 1].pts.push(pt);
+    S.last = pt; S.lastT = t;
+    addPointToMap(pt);
+    if (++saveTick % 5 === 0) persist();
+    render();
+  }
+  function startSeg(pt) {
+    S.segs.push({ w: S.work, pts: [pt] });
+    if (map) segLines.push(L.polyline([pt], lineStyle(S.work)).addTo(map));
+  }
+
+  // ---------- demo (simulated field work) ----------
+  function startDemo() {
+    if (demoTimer) return;
+    const w = num(settings.width) > 0 ? num(settings.width) : 6;
+    const origin = [61.4725, 23.5030], passLen = 280, mPerLat = 111320, mPerLng = 111320 * Math.cos(rad(origin[0]));
+    const route = [];
+    // transport in, then back-and-forth passes, then transport out
+    for (let i = 0; i <= 15; i++) route.push({ x: -150 + i * 10, y: -40, w: false });
+    for (let pass = 0; pass < 8; pass++) {
+      const x = pass * w;
+      for (let i = 0; i <= passLen / 4; i++) route.push({ x, y: pass % 2 ? passLen - i * 4 : i * 4, w: true });
+    }
+    for (let i = 0; i <= 15; i++) route.push({ x: 7 * w - i * 10, y: -40, w: false });
+    let i = 0;
+    gpsStatus('ok', 'Demo');
+    demoTimer = setInterval(() => {
+      if (S.status !== 'rec') return;
+      if (i >= route.length) { clearInterval(demoTimer); demoTimer = null; return; }
+      const r = route[i++];
+      if (r.w !== S.work) toggleImpl(r.w);
+      const jitter = () => (Math.random() - .5) * 0.6;
+      onPos({ coords: { latitude: origin[0] + (r.y + jitter()) / mPerLat, longitude: origin[1] + (r.x + jitter()) / mPerLng, accuracy: 4 },
+        timestamp: Date.now() * 1 + i * 2000 }); // simulated 2 s between fixes
+    }, 120);
+  }
+
+  // ---------- recording controls ----------
+  const elapsedMs = () => S.elapsed + (S.status === 'rec' && S.resumedAt ? Date.now() - S.resumedAt : 0);
+  function start(demo) {
+    clearView();
+    S = newSession(); S.demo = !!demo; S.status = 'rec'; S.startedAt = S.resumedAt = Date.now();
+    S.fuelTotal = ''; S.fuelRate = '';
+    $('#fuelTotal').value = ''; $('#fuelRate').value = '';
+    redrawTrack(false); startGPS(); lockScreen(); setFollow(true); persist(); render();
+  }
+  function pause() {
+    if (S.status === 'rec') {
+      S.elapsed += Date.now() - S.resumedAt; S.resumedAt = null; S.status = 'paused';
+      S.last = null; // next fix starts a new segment; movement while paused is not counted
+    } else if (S.status === 'paused') { S.status = 'rec'; S.resumedAt = Date.now(); }
+    persist(); render();
+  }
+  function stop() {
+    if (S.status === 'rec') S.elapsed += Date.now() - S.resumedAt;
+    S.resumedAt = null; S.status = 'done'; S.endedAt = Date.now();
+    stopGPS(); unlockScreen(); persist(); render(); redrawTrack(true); setFollow(false);
+    $('#stopSummary').textContent = `${fmtTime(S.elapsed)} · ${(S.distM / 1000).toFixed(2)} km · ${area().toFixed(2)} ha`;
+    $('#stopModal').style.display = 'flex';
+  }
+  function toggleImpl(force) {
+    const v = typeof force === 'boolean' ? force : !S.work;
+    if (v === S.work) return;
+    S.work = v;
+    if (S.status === 'rec' && S.last) startSeg(S.last);
+    persist(); render();
+  }
+  $('#startBtn').onclick = () => {
+    if (S.status === 'done') { if (!confirmNew()) return; }
+    start(false);
+  };
+  $('#pauseBtn').onclick = pause;
+  $('#stopBtn').onclick = stop;
+  $('#implBtn').onclick = () => toggleImpl();
+  $('#demoBtn').onclick = () => {
+    if (S.status === 'rec' || S.status === 'paused') { showWarn('Stop the current recording before running the demo.'); return; }
+    if (!$('#fuelTotal').value && settings.fuelMode === 'total') { /* leave empty; user can type */ }
+    start(true);
+  };
+  function confirmNew() { return true; } // unsaved finished session is simply replaced; save is offered on Stop
+
+  $('#saveBtn').onclick = () => {
+    const c = calc();
+    history.unshift({ id: Date.now(), date: S.startedAt, ms: S.elapsed, km: S.distM / 1000, workKm: S.workM / 1000,
+      ha: c.ha, width: num(settings.width) || 0, litres: c.litres, co2: c.co2, perKm: c.perKm, perHa: c.perHa,
+      factor: c.factor, demo: S.demo, segs: simplify(S.segs) });
+    history = history.slice(0, 30);
+    store(HKEY, history);
+    $('#stopModal').style.display = 'none';
+    renderHistory();
+  };
+  $('#discardBtn').onclick = () => { S = newSession(); persist(); redrawTrack(false); render(); $('#stopModal').style.display = 'none'; };
+  $('#closeModal').onclick = () => { $('#stopModal').style.display = 'none'; };
+
+  function simplify(segs) { // keep stored history small
+    const total = segs.reduce((a, s) => a + s.pts.length, 0), step = Math.max(1, Math.ceil(total / 1500));
+    return segs.map(s => ({ w: s.w, pts: s.pts.filter((p, i) => i % step === 0 || i === s.pts.length - 1) }));
+  }
+
+  // ---------- inputs ----------
+  const widthEl = $('#width'), factorEl = $('#factor');
+  widthEl.value = settings.width; factorEl.value = settings.factor;
+  $('#fuelTotal').value = S.fuelTotal || ''; $('#fuelRate').value = S.fuelRate || '';
+  widthEl.oninput = () => { settings.width = widthEl.value; store(SKEY, settings); render(); };
+  factorEl.oninput = () => { settings.factor = factorEl.value; store(SKEY, settings); render(); };
+  $('#fuelTotal').oninput = e => { S.fuelTotal = e.target.value; persist(); render(); };
+  $('#fuelRate').oninput = e => { S.fuelRate = e.target.value; persist(); render(); };
+  document.querySelectorAll('#fuelModeSeg button').forEach(b => b.onclick = () => {
+    settings.fuelMode = b.dataset.m; store(SKEY, settings); render();
+  });
+
+  // ---------- calculations ----------
+  const area = () => { const w = num(settings.width); return w > 0 ? S.workM * w / 10000 : 0; };
+  function calc() {
+    const factor = num(settings.factor) > 0 ? num(settings.factor) : 2.68;
+    const hours = elapsedMs() / 3.6e6;
+    let litres = NaN;
+    if (settings.fuelMode === 'total') litres = num(S.fuelTotal);
+    else { const r = num(S.fuelRate); if (r >= 0) litres = r * hours; }
+    const km = S.distM / 1000, ha = area();
+    const co2 = litres >= 0 ? litres * factor : NaN;
+    return { factor, hours, litres, km, ha, co2,
+      perKm: km > 0.01 ? co2 / km : NaN, perHa: ha > 0.001 ? co2 / ha : NaN,
+      lkm: km > 0.01 ? litres / km : NaN, lha: ha > 0.001 ? litres / ha : NaN };
+  }
+
+  // ---------- rendering ----------
+  const fmt = (v, d) => isFinite(v) ? v.toFixed(d) : '–';
+  function fmtTime(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+  function render() {
+    const st = S.status;
+    $('#statusTitle').textContent = { idle: 'Ready', rec: S.demo ? 'Recording (demo)' : 'Recording', paused: 'Paused', done: 'Finished' }[st];
+    $('#sTime').textContent = fmtTime(elapsedMs());
+    $('#sDist').textContent = (S.distM / 1000).toFixed(2);
+    $('#sArea').textContent = area().toFixed(2);
+    const active = st === 'rec' || st === 'paused';
+    $('#startBtn').style.display = active ? 'none' : '';
+    $('#startBtn').textContent = st === 'done' ? 'Start new recording' : 'Start recording';
+    $('#pauseBtn').style.display = active ? '' : 'none';
+    $('#stopBtn').style.display = active ? '' : 'none';
+    $('#pauseBtn').textContent = st === 'paused' ? 'Resume' : 'Pause';
+    $('#pauseBtn').className = 'btn ' + (st === 'paused' ? '' : 'amber');
+    const ib = $('#implBtn');
+    ib.style.display = active ? '' : 'none';
+    ib.className = 'btn full ' + (S.work ? 'down' : 'up');
+    ib.textContent = S.work ? 'Implement DOWN · working (tap to lift)' : 'Implement UP · transport (tap to lower)';
+
+    document.querySelectorAll('#fuelModeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === settings.fuelMode));
+    $('#fuelTotalBox').style.display = settings.fuelMode === 'total' ? '' : 'none';
+    $('#fuelRateBox').style.display = settings.fuelMode === 'rate' ? '' : 'none';
+
+    const c = calc();
+    $('#rTotal').textContent = fmt(c.co2, 1);
+    $('#rKm').textContent = fmt(c.perKm, 2);
+    $('#rHa').textContent = fmt(c.perHa, 1);
+    $('#rLitres').textContent = fmt(c.litres, 1);
+    $('#rLkm').textContent = fmt(c.lkm, 2);
+    $('#rLha').textContent = fmt(c.lha, 1);
+    const hints = [];
+    if (!(c.litres >= 0)) hints.push('Enter fuel consumption to calculate CO₂.');
+    if (!(num(settings.width) > 0)) hints.push('Enter implement width to calculate area and CO₂/ha.');
+    hints.push(`Per-km uses all distance (working + transport). Per-ha uses all fuel divided by worked area (implement down). Factor ${c.factor} kg/L.`);
+    $('#calcHint').textContent = hints.join(' ');
+  }
+  function renderHistory() {
+    const ul = $('#hist');
+    if (!history.length) { ul.innerHTML = '<li class="m">No saved recordings yet.</li>'; return; }
+    ul.innerHTML = history.map(h => {
+      const d = new Date(h.date);
+      return `<li><div><div><b>${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>${h.demo ? ' · demo' : ''}</div>
+        <div class="m">${h.km.toFixed(2)} km · ${h.ha.toFixed(2)} ha · ${fmt(h.litres, 1)} L · <b>${fmt(h.co2, 1)} kg CO₂</b></div>
+        <div class="m">${fmt(h.perKm, 2)} kg/km · ${fmt(h.perHa, 1)} kg/ha</div></div>
+        <div><button data-v="${h.id}">Map</button><button data-d="${h.id}" style="color:#b42318">Del</button></div></li>`;
+    }).join('');
+    ul.querySelectorAll('[data-v]').forEach(b => b.onclick = () => viewHistory(+b.dataset.v));
+    ul.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+      if (b.dataset.armed) { history = history.filter(h => h.id !== +b.dataset.d); store(HKEY, history); renderHistory(); }
+      else { b.dataset.armed = 1; b.textContent = 'Sure?'; setTimeout(() => { b.textContent = 'Del'; delete b.dataset.armed; }, 3000); }
+    });
+  }
+  function viewHistory(id) {
+    const h = history.find(x => x.id === id); if (!h || !map) return;
+    clearView(); setFollow(false);
+    viewLayer = L.layerGroup(h.segs.map(s => L.polyline(s.pts, lineStyle(s.w)))).addTo(map);
+    const all = h.segs.flatMap(s => s.pts);
+    if (all.length) map.fitBounds(L.latLngBounds(all), { padding: [30, 30] });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function clearView() { if (viewLayer && map) { map.removeLayer(viewLayer); viewLayer = null; } }
+
+  // ---------- CSV export ----------
+  $('#csvBtn').onclick = () => {
+    if (!history.length) { showWarn('No saved recordings to export.'); return; }
+    const rows = [['date', 'duration_h', 'distance_km', 'working_km', 'width_m', 'area_ha', 'diesel_l', 'co2_factor_kg_per_l', 'co2_kg', 'co2_kg_per_km', 'co2_kg_per_ha', 'demo']];
+    history.forEach(h => rows.push([new Date(h.date).toISOString(), (h.ms / 3.6e6).toFixed(3), h.km.toFixed(3), h.workKm.toFixed(3), h.width,
+      h.ha.toFixed(3), fmt(h.litres, 2), h.factor, fmt(h.co2, 2), fmt(h.perKm, 3), fmt(h.perHa, 2), h.demo ? 1 : 0]));
+    const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'tractor-co2-history.csv'; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  };
+
+  function showWarn(t) { const w = $('#envWarn'); w.textContent = t; w.style.display = 'block'; w.scrollIntoView({ behavior: 'smooth' }); }
+  function persist() { store(KEY, S); }
+
+  // ---------- boot ----------
+  initMap();
+  if (!window.isSecureContext) showWarn('GPS needs HTTPS. Open this app from an https:// address (e.g. GitHub Pages).');
+  if (S.status === 'rec' || S.status === 'paused') {
+    // app was reloaded mid-recording: continue, but don't join across the gap
+    S.last = null;
+    if (S.demo) { if (S.status === 'rec') S.elapsed += Date.now() - S.resumedAt; S.status = 'done'; S.resumedAt = null; }
+    else { startGPS(); lockScreen(); }
+  }
+  render(); renderHistory();
+  setInterval(() => { if (S.status === 'rec') { $('#sTime').textContent = fmtTime(elapsedMs()); if (settings.fuelMode === 'rate') render(); } }, 1000);
+  if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
