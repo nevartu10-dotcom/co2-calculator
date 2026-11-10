@@ -191,14 +191,20 @@
   const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : NaN; };
 
   // Massey Ferguson range (max power hp, without EPM boost). Model number = max hp.
+  // Massey Ferguson tractors: [group label, [[model name, max hp or null], ...]]
+  const mk = (code, hps) => hps.map(hp => [`MF ${code}.${hp}`, hp]); // current ranges: model number = max hp (without EPM boost)
   const MF = [
-    ['MF 5M', [95, 105, 115, 125, 135, 145], '5M'],
-    ['MF 5S', [105, 115, 125, 135, 145], '5S'],
-    ['MF 6S', [135, 145, 155, 165, 180], '6S'],
-    ['MF 7S', [145, 155, 165, 180, 190, 210], '7S'],
-    ['MF 8S', [205, 225, 245, 265, 285, 305], '8S'],
-    ['MF 9S', [285, 310, 340, 370, 400, 425], '9S']
+    ['MF 5M (95–145 hp)', mk('5M', [95, 105, 115, 125, 135, 145])],
+    ['MF 5S (105–145 hp)', mk('5S', [105, 115, 125, 135, 145])],
+    ['MF 6S (135–180 hp)', mk('6S', [135, 145, 155, 165, 180])],
+    ['MF 7S (145–210 hp)', mk('7S', [145, 155, 165, 180, 190, 210])],
+    ['MF 8S (205–305 hp)', mk('8S', [205, 225, 245, 265, 285, 305])],
+    ['MF 9S (285–425 hp)', mk('9S', [285, 310, 340, 370, 400, 425])],
+    // classic 3600 series, built in Beauvais 1987–95
+    ['MF 3600 (1987–95)', [['MF 3610', 113], ['MF 3630', 133], ['MF 3650', 150], ['MF 3660', null],
+      ['MF 3670', 170], ['MF 3680', 180], ['MF 3690', 190]]]
   ];
+  const HP = Object.fromEntries(MF.flatMap(g => g[1]));
   const settings = Object.assign({ width: '', fuelMode: 'total', factor: 2.68, model: '', otherModel: '', rates: {} }, load(SKEY, {}));
   if (!settings.rates) settings.rates = {};
   const newSession = () => ({ status: 'idle', segs: [], distM: 0, workM: 0, elapsed: 0, resumedAt: null,
@@ -398,13 +404,13 @@
   // ---------- tractor model ----------
   const modelEl = $('#model');
   modelEl.innerHTML = '<option value="">– Select tractor –</option>' +
-    MF.map(([series, hps, code]) => `<optgroup label="${series} (${hps[0]}–${hps[hps.length - 1]} hp)">` +
-      hps.map(hp => `<option value="MF ${code}.${hp}">MF ${code}.${hp} · ${hp} hp</option>`).join('') + '</optgroup>').join('') +
+    MF.map(([label, models]) => `<optgroup label="${label}">` +
+      models.map(([name, hp]) => `<option value="${name}">${name}${hp ? ' · ' + hp + ' hp' : ''}</option>`).join('') + '</optgroup>').join('') +
     '<option value="other">Other / older model…</option>';
   modelEl.value = settings.model || '';
   $('#otherModel').value = settings.otherModel || '';
   const modelName = () => settings.model === 'other' ? (settings.otherModel.trim() || 'Other') : settings.model;
-  const modelHp = () => { const m = /\.(\d+)$/.exec(settings.model || ''); return m && settings.model !== 'other' ? +m[1] : null; };
+  const modelHp = () => HP[settings.model] || null;
   function renderModel() {
     $('#otherBox').style.display = settings.model === 'other' ? '' : 'none';
     const name = modelName(), r = settings.rates[name];
