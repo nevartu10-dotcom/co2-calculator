@@ -103,7 +103,14 @@
   </div>
 
   <div class="card">
-    <h2>Implement &amp; fuel</h2>
+    <h2>Tractor, implement &amp; fuel</h2>
+    <label for="model">Tractor model</label>
+    <select id="model"></select>
+    <div id="otherBox" style="display:none">
+      <label for="otherModel">Model name</label>
+      <input id="otherModel" type="text" placeholder="e.g. MF 7726 S">
+    </div>
+    <div class="hint" id="modelHint"></div>
     <label for="width">Implement working width (m)</label>
     <input id="width" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 6">
 
@@ -183,7 +190,17 @@
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : NaN; };
 
-  const settings = Object.assign({ width: '', fuelMode: 'total', factor: 2.68 }, load(SKEY, {}));
+  // Massey Ferguson range (max power hp, without EPM boost). Model number = max hp.
+  const MF = [
+    ['MF 5M', [95, 105, 115, 125, 135, 145], '5M'],
+    ['MF 5S', [105, 115, 125, 135, 145], '5S'],
+    ['MF 6S', [135, 145, 155, 165, 180], '6S'],
+    ['MF 7S', [145, 155, 165, 180, 190, 210], '7S'],
+    ['MF 8S', [205, 225, 245, 265, 285, 305], '8S'],
+    ['MF 9S', [285, 310, 340, 370, 400, 425], '9S']
+  ];
+  const settings = Object.assign({ width: '', fuelMode: 'total', factor: 2.68, model: '', otherModel: '', rates: {} }, load(SKEY, {}));
+  if (!settings.rates) settings.rates = {};
   const newSession = () => ({ status: 'idle', segs: [], distM: 0, workM: 0, elapsed: 0, resumedAt: null,
     startedAt: null, endedAt: null, work: true, last: null, lastT: null, fuelTotal: '', fuelRate: '', demo: false });
   let S = load(KEY, null) || newSession();
@@ -319,8 +336,10 @@
   function start(demo) {
     clearView();
     S = newSession(); S.demo = !!demo; S.status = 'rec'; S.startedAt = S.resumedAt = Date.now();
-    S.fuelTotal = ''; S.fuelRate = '';
-    $('#fuelTotal').value = ''; $('#fuelRate').value = '';
+    // total litres is per recording; L/h is a property of the tractor, so keep it
+    const keepRate = $('#fuelRate').value || (settings.rates[modelName()] ? String(settings.rates[modelName()]) : '');
+    S.fuelTotal = ''; S.fuelRate = keepRate;
+    $('#fuelTotal').value = ''; $('#fuelRate').value = keepRate;
     redrawTrack(false); startGPS(); lockScreen(); setFollow(true); persist(); render();
   }
   function pause() {
@@ -360,7 +379,7 @@
 
   $('#saveBtn').onclick = () => {
     const c = calc();
-    history.unshift({ id: Date.now(), date: S.startedAt, ms: S.elapsed, km: S.distM / 1000, workKm: S.workM / 1000,
+    history.unshift({ id: Date.now(), date: S.startedAt, model: modelName() || '', hp: modelHp(), ms: S.elapsed, km: S.distM / 1000, workKm: S.workM / 1000,
       ha: c.ha, width: num(settings.width) || 0, litres: c.litres, co2: c.co2, perKm: c.perKm, perHa: c.perHa,
       factor: c.factor, demo: S.demo, segs: simplify(S.segs) });
     history = history.slice(0, 30);
@@ -376,6 +395,28 @@
     return segs.map(s => ({ w: s.w, pts: s.pts.filter((p, i) => i % step === 0 || i === s.pts.length - 1) }));
   }
 
+  // ---------- tractor model ----------
+  const modelEl = $('#model');
+  modelEl.innerHTML = '<option value="">– Select tractor –</option>' +
+    MF.map(([series, hps, code]) => `<optgroup label="${series} (${hps[0]}–${hps[hps.length - 1]} hp)">` +
+      hps.map(hp => `<option value="MF ${code}.${hp}">MF ${code}.${hp} · ${hp} hp</option>`).join('') + '</optgroup>').join('') +
+    '<option value="other">Other / older model…</option>';
+  modelEl.value = settings.model || '';
+  $('#otherModel').value = settings.otherModel || '';
+  const modelName = () => settings.model === 'other' ? (settings.otherModel.trim() || 'Other') : settings.model;
+  const modelHp = () => { const m = /\.(\d+)$/.exec(settings.model || ''); return m && settings.model !== 'other' ? +m[1] : null; };
+  function renderModel() {
+    $('#otherBox').style.display = settings.model === 'other' ? '' : 'none';
+    const name = modelName(), r = settings.rates[name];
+    $('#modelHint').textContent = name && r ? `Last L/h you entered for ${name}: ${r} L/h` : '';
+  }
+  function prefillRate() { // reuse the operator's own last L/h for this tractor
+    const r = settings.rates[modelName()];
+    if (settings.fuelMode === 'rate' && !S.fuelRate && r) { S.fuelRate = String(r); $('#fuelRate').value = r; persist(); }
+  }
+  modelEl.onchange = () => { settings.model = modelEl.value; store(SKEY, settings); renderModel(); prefillRate(); render(); };
+  $('#otherModel').oninput = e => { settings.otherModel = e.target.value; store(SKEY, settings); renderModel(); };
+
   // ---------- inputs ----------
   const widthEl = $('#width'), factorEl = $('#factor');
   widthEl.value = settings.width; factorEl.value = settings.factor;
@@ -383,9 +424,14 @@
   widthEl.oninput = () => { settings.width = widthEl.value; store(SKEY, settings); render(); };
   factorEl.oninput = () => { settings.factor = factorEl.value; store(SKEY, settings); render(); };
   $('#fuelTotal').oninput = e => { S.fuelTotal = e.target.value; persist(); render(); };
-  $('#fuelRate').oninput = e => { S.fuelRate = e.target.value; persist(); render(); };
+  $('#fuelRate').oninput = e => {
+    S.fuelRate = e.target.value; persist();
+    const r = num(e.target.value), name = modelName();
+    if (name && r > 0) { settings.rates[name] = r; store(SKEY, settings); renderModel(); }
+    render();
+  };
   document.querySelectorAll('#fuelModeSeg button').forEach(b => b.onclick = () => {
-    settings.fuelMode = b.dataset.m; store(SKEY, settings); render();
+    settings.fuelMode = b.dataset.m; store(SKEY, settings); prefillRate(); render();
   });
 
   // ---------- calculations ----------
@@ -446,7 +492,7 @@
     if (!history.length) { ul.innerHTML = '<li class="m">No saved recordings yet.</li>'; return; }
     ul.innerHTML = history.map(h => {
       const d = new Date(h.date);
-      return `<li><div><div><b>${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>${h.demo ? ' · demo' : ''}</div>
+      return `<li><div><div><b>${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>${h.model ? ' · ' + esc(h.model) : ''}${h.demo ? ' · demo' : ''}</div>
         <div class="m">${h.km.toFixed(2)} km · ${h.ha.toFixed(2)} ha · ${fmt(h.litres, 1)} L · <b>${fmt(h.co2, 1)} kg CO₂</b></div>
         <div class="m">${fmt(h.perKm, 2)} kg/km · ${fmt(h.perHa, 1)} kg/ha</div></div>
         <div><button data-v="${h.id}">Map</button><button data-d="${h.id}" style="color:#b42318">Del</button></div></li>`;
@@ -470,8 +516,8 @@
   // ---------- CSV export ----------
   $('#csvBtn').onclick = () => {
     if (!history.length) { showWarn('No saved recordings to export.'); return; }
-    const rows = [['date', 'duration_h', 'distance_km', 'working_km', 'width_m', 'area_ha', 'diesel_l', 'co2_factor_kg_per_l', 'co2_kg', 'co2_kg_per_km', 'co2_kg_per_ha', 'demo']];
-    history.forEach(h => rows.push([new Date(h.date).toISOString(), (h.ms / 3.6e6).toFixed(3), h.km.toFixed(3), h.workKm.toFixed(3), h.width,
+    const rows = [['date', 'tractor', 'tractor_hp', 'duration_h', 'distance_km', 'working_km', 'width_m', 'area_ha', 'diesel_l', 'co2_factor_kg_per_l', 'co2_kg', 'co2_kg_per_km', 'co2_kg_per_ha', 'demo']];
+    history.forEach(h => rows.push([new Date(h.date).toISOString(), '"' + String(h.model || '').replace(/"/g, '""') + '"', h.hp || '', (h.ms / 3.6e6).toFixed(3), h.km.toFixed(3), h.workKm.toFixed(3), h.width,
       h.ha.toFixed(3), fmt(h.litres, 2), h.factor, fmt(h.co2, 2), fmt(h.perKm, 3), fmt(h.perHa, 2), h.demo ? 1 : 0]));
     const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -479,6 +525,7 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   };
 
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function showWarn(t) { const w = $('#envWarn'); w.textContent = t; w.style.display = 'block'; w.scrollIntoView({ behavior: 'smooth' }); }
   function persist() { store(KEY, S); }
 
@@ -491,7 +538,7 @@
     if (S.demo) { if (S.status === 'rec') S.elapsed += Date.now() - S.resumedAt; S.status = 'done'; S.resumedAt = null; }
     else { startGPS(); lockScreen(); }
   }
-  render(); renderHistory();
+  renderModel(); render(); renderHistory();
   setInterval(() => { if (S.status === 'rec') { $('#sTime').textContent = fmtTime(elapsedMs()); if (settings.fuelMode === 'rate') render(); } }, 1000);
   if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
